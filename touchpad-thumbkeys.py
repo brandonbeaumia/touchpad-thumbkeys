@@ -113,10 +113,10 @@ DEBUG: bool = "--debug" in sys.argv
 
 
 def log(*args: object) -> None:
-    """Print detailed trace output only if --debug flag is passed."""
-    if DEBUG:
-        print(*args, flush=True)
-
+    """Always print full output to make systemd service easier to work with."""
+  # if DEBUG:
+    print(*args, flush=True)
+    
 
 def EVIOCGABS(axis: int) -> int:
     """Calculate the ioctl code for reading absolute axis information."""

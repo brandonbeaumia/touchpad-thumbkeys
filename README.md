@@ -1,15 +1,14 @@
 # Touchpad ThumbKeys
 
 Converts the top strip of your touchpad into configurable left/right zones that output single keys, combinations of keys, or commands.
-Built with [https://github.com/jtroo/kanata/](Kanata) consumption in mind, but works just as well as a stand-alone tool.
+Built with [Kanata](https://github.com/jtroo/kanata/) consumption in mind, but works just as well as a stand-alone tool.
 
 ## Configure
 
 Before a full installation, configure the daemon:
 
-1. Clone wherever you'd like via `git clone https://github.com/brandonbeaumia/touchpad-thumbkeys.git`
-2. Run the script interactively with debugging enabled:
-  `sudo python3 touchpad-thumbkeys.py --debug`
+1. Clone wherever you'd like: `git clone https://github.com/brandonbeaumia/touchpad-thumbkeys.git`
+2. Run the script interactively: `sudo python3 touchpad-thumbkeys.py`
 3. Place your fingers on home row and repeatedly tap your touchpad with each thumb. Note the X and Y coordinates that are reported.
 4. Press `Ctrl+C` to exit.
 5. Open `touchpad-thumbkeys.py` in your text editor and edit the thorougly-commented Configuration section to set up your zones, actions, and a few preferences.
@@ -26,8 +25,13 @@ After achieving your preferred settings, you may install the script and systemd 
     sudo install -m644 touchpad-thumbkeys.service /etc/systemd/system/
     sudo systemctl daemon-reload
     sudo systemctl enable --now touchpad-thumbkeys
-    (restart Kanata or other input handlers regrab the device; only necessary the first time)
+    (reboot; or, restart Kanata or other input handlers to regrab the device. Only necessary this first time.)
     ```
+
+## Post-Install
+
+* Viewing Logs: `journalctl -f -u touchpad-thumbkeys.service`
+* Updating Config: edit `/usr/local/bin/touchpad-thumbkeys.py` and then restart it via `sudo systemctl restart touchpad-thumbkeys.service`
 
 ## Uninstall
     ```
@@ -35,13 +39,7 @@ After achieving your preferred settings, you may install the script and systemd 
     sudo rm /usr/local/bin/thumbkeys.py /etc/systemd/system/touchpad-thumbkeys.service
     sudo systemctl daemon-reload
     ```
-
-## Troubleshooting
-
-1. Stop the background daemon: `sudo systemctl stop touchpad-thumbkeys`
-2. Run the installed daemon interactively: `sudo python3 /usr/local/bin/touchpad-thumbkeys.py --debug`
-3. Tap the touchpad to see zone evaluations, coordinate tracking, slide-out states, and key emissions. 
-
+    
 ## Touchpad Conflict Mitigation
 
 This is designed to not interfere with most regular touchpad movement:
