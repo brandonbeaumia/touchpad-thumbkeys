@@ -5,12 +5,6 @@
 Intercepts low-level evdev touchpad events, splits the top edge into two
 thumb zones, emits uinput keycodes when a touch originates inside a zone, and
 routes standard mouse tracking events to a virtual touchpad.
-
-Configuration & Usage:
-    1. Run `sudo python3 thumbkeys.py --debug` and repeatedly tap your touchpad with each thumb.
-    2. Set ZONE_HEIGHT slightly higher than your largest Y value.
-    3. Set CENTER_X to a point about halfway between your two thumb's X values.
-    4. Set KEY_TOP_LEFT and KEY_TOP_RIGHT to your preferred keycodes.
 """
 
 from __future__ import annotations
@@ -21,7 +15,9 @@ import os
 import select
 import signal
 import struct
+import subprocess
 import sys
+import threading
 import time
 
 # =============================================================================
@@ -32,14 +28,15 @@ import time
 # Set to None to auto-detect. Also prompts if in interactive shell and no device was found.
 TOUCHPAD_DEVICE_NAME: str | None = None
 
-# Vertical height of the top thumb zone (in raw device units from top edge)
+# Vertical height of the top thumb zone (in raw device units from top edge).
+# Set a little bit above your largest reported Y value.
 ZONE_HEIGHT: int = 300
 
-# Center X division line in raw device units. Set to None for exact center split.
+# Center X division line in raw device units.
+# Set to None for exact center split, or set to midpoint between your two thumb's X values.
 CENTER_X: int | None = 1100
 
 # Keycodes to emit (using Linux EV_KEY kernel integers)
-
 #   1 = Esc
 #  29 = Left Control
 # 125 = Left Meta
@@ -52,17 +49,26 @@ CENTER_X: int | None = 1100
 KEY_TOP_LEFT: int = 94
 KEY_TOP_RIGHT: int = 92
 
+# Hold Time (in milliseconds): The finger must remain in the thumb zone for this long
+# before the keycode is emitted. Set to 0 for instant activation.
+HOLD_TIME_TOP_LEFT: int = 0
+HOLD_TIME_TOP_RIGHT: int = 0
+
 # Slide-Out Behavior: If True, dragging a finger out of the thumb zone releases 
-# the synthetic keypress and transitions seamlessly to regular touchpad pointer movement.
+# the synthetic keypress and transitions to regular touchpad pointer movement.
 SLIDE_OUT_TOP_LEFT: bool = True
 SLIDE_OUT_TOP_RIGHT: bool = True
 
 # Two-finger touches that land in the same zone always switch to touchpad output (for scrolling),
-# but two-finger touches that land in separate zones are interpreted as two thumb keys.
-# Exclusive Thumb Mode: If True, landing a second finger in that different thumb zone while one 
+# but two-finger touches that land in *separate* zones are interpreted as two thumb keys.
+# Exclusive Thumb Mode: If True, landing a finger in that different thumb zone while one 
 # is already active cancels both keypresses and transitions all fingers to touchpad mode.
 # Reduces false positives, but only enable if you do not need to activate your thumb keys simultaneously.
 EXCLUSIVE_THUMB_KEYS: bool = False
+
+# KDE Settings Sync: If True, queries KDE Plasma's D-Bus interface to clone
+# your main touchpad's settings onto the virtual pointer device upon startup.
+KDE_INHERIT_TOUCHPAD_SETTINGS: bool = True
 
 # =============================================================================
 # Linux Kernel Input Protocol Constants
@@ -137,7 +143,6 @@ def find_event_node(target_name: str | None = None) -> tuple[str, str]:
             if line.startswith("N:"):
                 current_name = line.split('"')[1]
             elif line.startswith("H:"):
-                # Extract space-separated handlers (e.g., ["mouse0", "event2", "kbd"])
                 handlers = line.split("=", 1)[1].split()
                 for event_node in handlers:
                     if event_node.startswith("event"):
@@ -145,30 +150,25 @@ def find_event_node(target_name: str | None = None) -> tuple[str, str]:
 
     search_target = target_name or TOUCHPAD_DEVICE_NAME
 
-    # Tier 1: Hardcoded or Reconnection Target (STRICT)
     if search_target:
         for event_node, name in devices:
             if name == search_target:
                 print(f"[Device] Matched target '{name}' on /dev/input/{event_node}", flush=True)
                 return f"/dev/input/{event_node}", name
 
-        # Fail immediately if hardcoded device is missing—never fall back
         if target_name:
             raise FileNotFoundError(f"Target device '{target_name}' not currently available.")
         sys.exit(f"Fatal: Hardcoded device '{search_target}' not found in /proc/bus/input/devices. Aborting.")
 
-    # Tier 2: Auto-detect physical touchpad (ignoring uinput virtual devices)
     for event_node, name in devices:
         name_lower = name.lower()
         if "touchpad" in name_lower and "virtual" not in name_lower and "thumbkeys" not in name_lower:
             print(f"Auto-detected touchpad: '{name}' on /dev/input/{event_node}", flush=True)
             return f"/dev/input/{event_node}", name
 
-    # Non-interactive / Systemd safety fallback
     if not sys.stdin.isatty():
         sys.exit("Fatal: Could not auto-detect Touchpad while running non-interactively (systemd).")
 
-    # Tier 3: Interactive selection menu (TTY only)
     print("\nCould not automatically identify a physical Touchpad.")
     print("Available Input Devices:")
     for idx, (event_node, name) in enumerate(devices):
@@ -263,9 +263,11 @@ class Touch:
         self.tid: int = tid
         self.x: int | None = None
         self.y: int | None = None
+        self.start_time: float = time.monotonic()
         self.origin_evaluated: bool = False
         self.is_thumb_zone: bool = False
         self.key_code: int | None = None
+        self.hold_time_ms: int = 0
         self.key_pressed: bool = False
         self.allow_slide_out: bool = False
         self.pointer: bool = False
@@ -291,13 +293,21 @@ class TouchZoneDaemon:
 
         self.center_x: int = CENTER_X if CENTER_X is not None else self.max_x // 2
 
+        self.virtual_pointer_name: str = "Touchpad Thumbkeys Virtual Pointer"
         self.kbd: UInput = UInput("Touchpad Thumbkeys Keyboard", keys=[KEY_TOP_LEFT, KEY_TOP_RIGHT])
         self.pad: UInput = UInput(
-            "Touchpad Thumbkeys Virtual Pointer",
+            self.virtual_pointer_name,
             keys=[BTN_LEFT, BTN_TOUCH] + BTN_TOOL,
             abs_axes=absinfo,
             props=[INPUT_PROP_POINTER, INPUT_PROP_BUTTONPAD],
         )
+
+        if KDE_INHERIT_TOUCHPAD_SETTINGS:
+            threading.Thread(
+                target=self.sync_kde_settings,
+                args=(self.src_path, self.virtual_pointer_name),
+                daemon=True,
+            ).start()
 
         self.slot: int = 0
         self.touches: dict[int, Touch] = {}
@@ -306,6 +316,110 @@ class TouchZoneDaemon:
 
         fcntl.ioctl(self.src, EVIOCGRAB, 1)
         print(f"[Device] Acquired exclusive EVIOCGRAB on '{self.target_name}' ({self.src_path})", flush=True)
+
+    def sync_kde_settings(self, source_path: str, virtual_name: str) -> None:
+        """Background worker to query and clone KDE KWin input device configuration via D-Bus."""
+        import pwd
+        
+        # 1. Dynamically find the logged-in KDE user (works whether started via sudo or systemd)
+        uid = None
+        try:
+            # Find the UID of the user running the Plasma window manager
+            ps_res = subprocess.run(["ps", "-C", "kwin_wayland,kwin_x11", "-o", "uid="], capture_output=True, text=True)
+            uids = [u.strip() for u in ps_res.stdout.splitlines() if u.strip()]
+            if uids:
+                uid = int(uids[0])
+        except Exception:
+            pass
+
+        # Fallback to SUDO_USER if ps failed
+        if uid is None:
+            sudo_user = os.environ.get("SUDO_USER")
+            if sudo_user and sudo_user != "root":
+                uid = pwd.getpwnam(sudo_user).pw_uid
+
+        if uid is None:
+            print("[KDE Sync] Warning: Could not detect logged-in KDE user. Skipping sync.", flush=True)
+            return
+
+        username = pwd.getpwuid(uid).pw_name
+        env = os.environ.copy()
+        env["XDG_RUNTIME_DIR"] = f"/run/user/{uid}"
+        env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path=/run/user/{uid}/bus"
+
+        # Helper to execute busctl safely inside the user's D-Bus session
+        # Helper to execute busctl safely inside the user's D-Bus session
+        def run_busctl(*args: str) -> subprocess.CompletedProcess[str]:
+            cmd = ["sudo", "-E", "-u", username, "busctl", "--user"] + list(args)
+            try:
+                return subprocess.run(cmd, capture_output=True, text=True, env=env)
+            except FileNotFoundError as e:
+                return subprocess.CompletedProcess(args=cmd, returncode=1, stdout="", stderr=str(e))
+
+        src_sys_name = os.path.basename(source_path)
+        src_dbus_path = f"/org/kde/KWin/InputDevice/{src_sys_name}"
+
+        print(f"[KDE Sync] Bridging D-Bus session for user '{username}' (UID: {uid})...", flush=True)
+        virt_sys_name = None
+
+        # 2. Poll KWin D-Bus tree for the virtual pointer
+        for attempt in range(20):
+            time.sleep(1.0)
+            res = run_busctl("tree", "org.kde.KWin")
+            
+            if res.returncode != 0:
+                if attempt == 19:
+                    print(f"[KDE Sync] Fatal: Could not reach org.kde.KWin on D-Bus. Error: {res.stderr.strip()}", flush=True)
+                continue
+
+            for line in res.stdout.splitlines():
+                if "/org/kde/KWin/InputDevice/event" in line:
+                    path = line.strip().split()[-1]
+                    name_res = run_busctl("get-property", "org.kde.KWin", path, "org.kde.KWin.InputDevice", "name")
+                    
+                    if virtual_name.lower() in name_res.stdout.lower() or "thumbkeys" in name_res.stdout.lower():
+                        virt_sys_name = path.split("/")[-1]
+                        break
+            if virt_sys_name:
+                break
+
+        if not virt_sys_name:
+            print("[KDE Sync] Warning: Could not locate virtual device in KDE D-Bus tree. Skipping sync.", flush=True)
+            return
+
+        virt_dbus_path = f"/org/kde/KWin/InputDevice/{virt_sys_name}"
+        print(f"[KDE Sync] Matching source ({src_dbus_path}) -> virtual ({virt_dbus_path})", flush=True)
+        
+
+        # 3. Clone properties
+        properties: list[str] = [
+            "enabled", "disableEventsOnExternalMouse", "leftHanded", 
+            "middleButtonEmulation", "pointerAcceleration", "pointerAccelerationProfile", 
+            "scrollFactor", "scrollMethod", "naturalScroll", "clickMethod", 
+            "tapToClick", "tapAndDrag", "tapDragLock", "lmrTapButtonMap"
+        ]
+
+        # 3. Clone properties
+        for prop in properties:
+            get_res = run_busctl("get-property", "org.kde.KWin", src_dbus_path, "org.kde.KWin.InputDevice", prop)
+            if get_res.returncode == 0:
+                parts = get_res.stdout.strip().split(maxsplit=1)
+                if len(parts) == 2:
+                    sig, val = parts
+                    
+                    set_res = run_busctl("set-property", "org.kde.KWin", virt_dbus_path, "org.kde.KWin.InputDevice", prop, sig, val)
+                    if set_res.returncode == 0:
+                        log(f"[KDE Sync] Synced {prop} ({val})")
+                    else:
+                        log(f"[KDE Sync] Failed to set {prop}: {set_res.stderr.strip()}")
+            else:
+                log(f"[KDE Sync] Skipping {prop} (not exposed by source device)")
+
+        # 4. Hardcoded override
+        run_busctl("set-property", "org.kde.KWin", virt_dbus_path, "org.kde.KWin.InputDevice", "disableWhileTyping", "b", "false")
+        log("[KDE Sync] Overrode disableWhileTyping (Forced to false)")
+
+        print("[KDE Sync] Configuration cloned successfully.", flush=True)
 
     def zone_at(self, x: int, y: int) -> str | None:
         """Determine if X/Y coordinates land inside a thumb zone."""
@@ -338,9 +452,35 @@ class TouchZoneDaemon:
         elif etype == EV_SYN and code == SYN_REPORT:
             self.process_frame()
 
+    def get_poll_timeout(self) -> float:
+        """Calculate how long to block in select() before processing held keys."""
+        timeout = 1.0
+        now = time.monotonic()
+        for t in self.touches.values():
+            if t.is_thumb_zone and not t.key_pressed and not t.ended and t.hold_time_ms > 0:
+                time_left = (t.hold_time_ms / 1000.0) - (now - t.start_time)
+                if time_left <= 0:
+                    return 0.0
+                if time_left < timeout:
+                    timeout = time_left
+        return timeout
+
+    def process_held_keys(self) -> None:
+        """Emit key presses for touches that have met their required hold time."""
+        now = time.monotonic()
+        for t in self.touches.values():
+            if t.is_thumb_zone and not t.key_pressed and not t.ended:
+                if (now - t.start_time) * 1000 >= t.hold_time_ms:
+                    assert t.key_code is not None
+                    self.kbd.emit(EV_KEY, t.key_code, 1)
+                    self.kbd.syn()
+                    t.key_pressed = True
+                    
+                    label = "Instant" if t.hold_time_ms == 0 else f"Held {t.hold_time_ms}ms"
+                    print(f"=== KEY DOWN ({label}): {t.key_code} ===", flush=True)
+
     def process_frame(self) -> None:
         """Process complete event frames and route to keyboard or pointer uinput."""
-        # 1. Evaluate new touch landings
         for t in list(self.touches.values()):
             if not t.origin_evaluated and t.x is not None and t.y is not None:
                 t.origin_evaluated = True
@@ -351,16 +491,17 @@ class TouchZoneDaemon:
                     if zone == "top_right":
                         t.key_code = KEY_TOP_RIGHT
                         t.allow_slide_out = SLIDE_OUT_TOP_RIGHT
+                        t.hold_time_ms = HOLD_TIME_TOP_RIGHT
                     else:
                         t.key_code = KEY_TOP_LEFT
                         t.allow_slide_out = SLIDE_OUT_TOP_LEFT
-                    log(f"[Landing] X:{t.x} Y:{t.y} -> ZONE '{zone}' (Key: {t.key_code}, SlideOut: {t.allow_slide_out})")
+                        t.hold_time_ms = HOLD_TIME_TOP_LEFT
+                    log(f"[Landing] X:{t.x} Y:{t.y} -> ZONE '{zone}' (Key: {t.key_code}, Hold: {t.hold_time_ms}ms, SlideOut: {t.allow_slide_out})")
                 else:
                     t.is_thumb_zone = False
                     t.pointer = True
                     log(f"[Landing] X:{t.x} Y:{t.y} -> POINTER MODE")
 
-        # 2. Check for Multi-Touch / Exclusive Conflicts
         active_thumb_touches = [t for t in self.touches.values() if t.is_thumb_zone and not t.ended]
         zones_in_use = [t.key_code for t in active_thumb_touches if t.key_code is not None]
         has_same_zone_duplicate = len(zones_in_use) != len(set(zones_in_use))
@@ -379,27 +520,18 @@ class TouchZoneDaemon:
                 t.is_thumb_zone = False
                 t.pointer = True
 
-        # 3. Process remaining single thumb-key presses/releases
         for t in list(self.touches.values()):
-            # Instant Press
-            if t.is_thumb_zone and not t.key_pressed and not t.ended:
-                assert t.key_code is not None
-                self.kbd.emit(EV_KEY, t.key_code, 1)
-                self.kbd.syn()
-                t.key_pressed = True
-                print(f"=== KEY DOWN: {t.key_code} ===", flush=True)
-
-            # Zone Exit: Finger moved out of thumb zone while still on pad
-            if t.is_thumb_zone and t.allow_slide_out and t.key_pressed and t.y is not None and t.y >= ZONE_HEIGHT:
-                assert t.key_code is not None
-                self.kbd.emit(EV_KEY, t.key_code, 0)
-                self.kbd.syn()
-                t.key_pressed = False
+            if t.is_thumb_zone and t.allow_slide_out and t.y is not None and t.y >= ZONE_HEIGHT:
+                if t.key_pressed:
+                    assert t.key_code is not None
+                    self.kbd.emit(EV_KEY, t.key_code, 0)
+                    self.kbd.syn()
+                    t.key_pressed = False
+                    print(f"=== KEY UP (Zone Exit): {t.key_code} -> POINTER MODE ===", flush=True)
+                
                 t.is_thumb_zone = False
                 t.pointer = True
-                print(f"=== KEY UP (Zone Exit): {t.key_code} -> POINTER MODE ===", flush=True)
 
-            # Instant Release
             if t.key_pressed and t.ended:
                 assert t.key_code is not None
                 self.kbd.emit(EV_KEY, t.key_code, 0)
@@ -407,6 +539,7 @@ class TouchZoneDaemon:
                 t.key_pressed = False
                 print(f"=== KEY UP: {t.key_code} ===", flush=True)
 
+        self.process_held_keys()
         self.forward_pointer_events()
 
         for slot in [s for s, t in self.touches.items() if t.ended]:
@@ -503,20 +636,24 @@ class TouchZoneDaemon:
             flush=True,
         )
         while True:
-            if not select.select([self.src], [], [], 1.0)[0]:
-                continue
-            try:
-                data = os.read(self.src, EVENT_STRUCT.size * 64)
-            except BlockingIOError:
-                continue
-            except OSError as e:
-                log(f"Device read error: {e}")
-                self.reconnect()
-                continue
+            timeout = self.get_poll_timeout()
+            ready = select.select([self.src], [], [], timeout)[0]
+            
+            if ready:
+                try:
+                    data = os.read(self.src, EVENT_STRUCT.size * 64)
+                except BlockingIOError:
+                    continue
+                except OSError as e:
+                    log(f"Device read error: {e}")
+                    self.reconnect()
+                    continue
 
-            for off in range(0, len(data) - EVENT_STRUCT.size + 1, EVENT_STRUCT.size):
-                _, _, etype, code, value = EVENT_STRUCT.unpack_from(data, off)
-                self.handle_event(etype, code, value)
+                for off in range(0, len(data) - EVENT_STRUCT.size + 1, EVENT_STRUCT.size):
+                    _, _, etype, code, value = EVENT_STRUCT.unpack_from(data, off)
+                    self.handle_event(etype, code, value)
+            else:
+                self.process_held_keys()
 
     def shutdown(self, *_: object) -> None:
         """Release device locks, flush pending key releases, and destroy uinput nodes cleanly."""
