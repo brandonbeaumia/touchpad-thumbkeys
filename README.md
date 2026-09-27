@@ -12,7 +12,7 @@ Before a full installation, configure the daemon:
 3. Place your fingers on home row and repeatedly tap your touchpad with each thumb. Note the X and Y coordinates that are reported.
 4. Press `Ctrl+C` to exit.
 5. Open `touchpad-thumbkeys.py` in your text editor and edit the thorougly-commented Configuration section to set up your zones, actions, and a few preferences.
-6. Repeat until it is behaving to your liking.
+6. Repeat steps 2-5 until it is behaving to your liking.
 
 
 ## Install (Optional)
