@@ -4,7 +4,7 @@
     alt="Image of a touchpad with its top-left and top-right corners split by pink dashed lines"
     title="Touchpad ThumbKeys"
     height="160"
-    src="assets/icon.svg"
+    src="icon.svg"
   />
 </h2>
 
