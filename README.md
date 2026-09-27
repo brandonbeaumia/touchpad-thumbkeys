@@ -19,14 +19,14 @@ Before a full installation, configure the daemon:
 
 After achieving your preferred settings, you may install the script and systemd service to run it automatically in the background. If kanata.service is also installed, it explicitly runs before it.
 
-    ```
-    cd ~/Downloads/touchpad-thumbkeys/
-    sudo install -m755 touchpad-thumbkeys.py /usr/local/bin/thumbkeys.py
-    sudo install -m644 touchpad-thumbkeys.service /etc/systemd/system/
-    sudo systemctl daemon-reload
-    sudo systemctl enable --now touchpad-thumbkeys
-    (reboot; or, restart Kanata or other input handlers to regrab the device. Only necessary this first time.)
-    ```
+```bash
+cd ~/Downloads/touchpad-thumbkeys/
+sudo install -m755 touchpad-thumbkeys.py /usr/local/bin/thumbkeys.py
+sudo install -m644 touchpad-thumbkeys.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now touchpad-thumbkeys
+(reboot; or, restart Kanata or other input handlers to regrab the device. Only necessary this first time.)
+```
 
 ## Post-Install
 
@@ -34,11 +34,12 @@ After achieving your preferred settings, you may install the script and systemd 
 * Updating Config: edit `/usr/local/bin/touchpad-thumbkeys.py` and then restart it via `sudo systemctl restart touchpad-thumbkeys.service`
 
 ## Uninstall
-    ```
-    sudo systemctl disable --now touchpad-thumbkeys
-    sudo rm /usr/local/bin/thumbkeys.py /etc/systemd/system/touchpad-thumbkeys.service
-    sudo systemctl daemon-reload
-    ```
+```bash
+sudo systemctl disable --now touchpad-thumbkeys
+sudo rm /usr/local/bin/thumbkeys.py /etc/systemd/system/touchpad-thumbkeys.service
+sudo systemctl daemon-reload
+```
+    
     
 ## Touchpad Conflict Mitigation
 
