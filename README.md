@@ -25,13 +25,13 @@ sudo install -m755 touchpad-thumbkeys.py /usr/local/bin/thumbkeys.py
 sudo install -m644 touchpad-thumbkeys.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now touchpad-thumbkeys
-(reboot; or, restart Kanata or other input handlers to regrab the device. Only necessary this first time.)
 ```
+Restart Kanata or other input handlers so they regrab the device. Only necessary this first time. Alternatively, reboot.
 
 ## Post-Install
 
 * Viewing Logs: `journalctl -f -u touchpad-thumbkeys.service`
-* Updating Config: edit `/usr/local/bin/touchpad-thumbkeys.py` and then restart it via `sudo systemctl restart touchpad-thumbkeys.service`
+* Updating Config: edit `/usr/local/bin/touchpad-thumbkeys.py` and then restart via `sudo systemctl restart touchpad-thumbkeys.service`
 
 ## Uninstall
 ```bash
