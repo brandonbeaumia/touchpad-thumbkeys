@@ -1,31 +1,26 @@
 [Unit]
 Description=Touchpad Thumb Keys Daemon
-Documentation=https://github.com/YOUR_USERNAME/touchpad-thumbkeys
-# Start after the input subsystem and graphical target are up
-After=sys-subsystem-input-devices.device multi-user.target
-# Re-evaluate device availability if udev triggers input changes
+After=sys-subsystem-input-devices.device graphical.target
 Wants=sys-subsystem-input-devices.device
+# Tell systemd to initialize this before Kanata so Kanata can find the created virtual keyboard device
+# Only required if you run Kanata as a service
+Before=kanata.service
 
 [Service]
 Type=simple
-# Ensure working directory points to your project folder
 WorkingDirectory=/usr/local/bin
 ExecStart=/usr/bin/python3 /usr/local/bin/thumbkeys.py
 
-# Unbuffered stdout/stderr logging so journalctl captures prints immediately
-Environment=PYTHONUNBUFFERED=1
+# Pause systemd's queue for 1 second to give uinput time to create the device nodes and ready them for Kanata
+# Only required if you run Kanata as a service.
+ExecStartPost=/bin/sleep 1
 
-# Auto-restart on device disconnects, unhandled errors, or unexpected crashes
+Environment=PYTHONUNBUFFERED=1
 Restart=on-failure
 RestartSec=3s
-
-# Security Hardening
-# Prevent process from elevating privileges via suid/sgid bits
-NoNewPrivileges=true
-# Protect system paths from accidental modification
 ProtectSystem=full
 ProtectHome=read-only
 PrivateTmp=true
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=graphical.target

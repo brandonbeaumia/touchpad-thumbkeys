@@ -362,14 +362,12 @@ class TouchZoneDaemon:
         print(f"[KDE Sync] Bridging D-Bus session for user '{username}' (UID: {uid})...", flush=True)
         virt_sys_name = None
 
-        # 2. Poll KWin D-Bus tree for the virtual pointer
-        for attempt in range(20):
-            time.sleep(1.0)
+        # 2. Poll KWin D-Bus tree for the virtual pointer indefinitely
+        while True:
+            time.sleep(2.0)
             res = run_busctl("tree", "org.kde.KWin")
             
             if res.returncode != 0:
-                if attempt == 19:
-                    print(f"[KDE Sync] Fatal: Could not reach org.kde.KWin on D-Bus. Error: {res.stderr.strip()}", flush=True)
                 continue
 
             for line in res.stdout.splitlines():
@@ -597,6 +595,14 @@ class TouchZoneDaemon:
             print("[Device] Re-acquired EVIOCGRAB on resume", flush=True)
         except OSError:
             pass
+            
+        if KDE_INHERIT_TOUCHPAD_SETTINGS:
+            threading.Thread(
+                target=self.sync_kde_settings,
+                args=(self.src_path, self.virtual_pointer_name),
+                daemon=True,
+            ).start()
+            
         signal.signal(signal.SIGTSTP, self.handle_suspend)
 
     def reconnect(self) -> None:
@@ -624,6 +630,14 @@ class TouchZoneDaemon:
                 fcntl.ioctl(self.src, EVIOCGRAB, 1)
                 self.src_path = new_path
                 print(f"[Device] Reconnected successfully to '{self.target_name}' on {self.src_path}", flush=True)
+                
+                if KDE_INHERIT_TOUCHPAD_SETTINGS:
+                    threading.Thread(
+                        target=self.sync_kde_settings,
+                        args=(self.src_path, self.virtual_pointer_name),
+                        daemon=True,
+                    ).start()
+                    
                 return
             except (OSError, FileNotFoundError):
                 continue
