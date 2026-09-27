@@ -11,7 +11,6 @@ Configuration & Usage:
     2. Set ZONE_HEIGHT slightly higher than your largest Y value.
     3. Set CENTER_X to a point about halfway between your two thumb's X values.
     4. Set KEY_TOP_LEFT and KEY_TOP_RIGHT to your preferred keycodes.
-    5. Optionally disable ALLOW_SLIDEOUTs.
 """
 
 from __future__ import annotations
@@ -40,6 +39,7 @@ ZONE_HEIGHT: int = 300
 CENTER_X: int | None = 1100
 
 # Keycodes to emit (using Linux EV_KEY kernel integers)
+
 #   1 = Esc
 #  29 = Left Control
 # 125 = Left Meta
@@ -52,14 +52,17 @@ CENTER_X: int | None = 1100
 KEY_TOP_LEFT: int = 94
 KEY_TOP_RIGHT: int = 92
 
-# Slide-Out Behavior: If set to True, dragging a finger out of the thumb zone releases 
-# the synthetic keypress and transitions to regular touchpad pointer movement.
-# If your key outputs do not result in state changes or typed text (good options include
-# control, shift, or Kanata layer changes), this makes the daemon almost invisible
-# but for a small delay when dragging from the top of the touchpad.
+# Slide-Out Behavior: If True, dragging a finger out of the thumb zone releases 
+# the synthetic keypress and transitions seamlessly to regular touchpad pointer movement.
+SLIDE_OUT_TOP_LEFT: bool = True
+SLIDE_OUT_TOP_RIGHT: bool = True
 
-ALLOW_SLIDE_OUT_TOP_LEFT: bool = True
-ALLOW_SLIDE_OUT_TOP_RIGHT: bool = True
+# Two-finger touches that land in the same zone always switch to touchpad output (for scrolling),
+# but two-finger touches that land in separate zones are interpreted as two thumb keys.
+# Exclusive Thumb Mode: If True, landing a second finger in that different thumb zone while one 
+# is already active cancels both keypresses and transitions all fingers to touchpad mode.
+# Reduces false positives, but only enable if you do not need to activate your thumb keys simultaneously.
+EXCLUSIVE_THUMB_KEYS: bool = False
 
 # =============================================================================
 # Linux Kernel Input Protocol Constants
@@ -269,6 +272,7 @@ class Touch:
         self.started: bool = False
         self.ended: bool = False
 
+
 class TouchZoneDaemon:
     """Core event loop for grabbing touchpad input and converting zones to keycodes."""
 
@@ -336,6 +340,7 @@ class TouchZoneDaemon:
 
     def process_frame(self) -> None:
         """Process complete event frames and route to keyboard or pointer uinput."""
+        # 1. Evaluate new touch landings
         for t in list(self.touches.values()):
             if not t.origin_evaluated and t.x is not None and t.y is not None:
                 t.origin_evaluated = True
@@ -345,16 +350,37 @@ class TouchZoneDaemon:
                     t.is_thumb_zone = True
                     if zone == "top_right":
                         t.key_code = KEY_TOP_RIGHT
-                        t.allow_slide_out = ALLOW_SLIDE_OUT_TOP_RIGHT
+                        t.allow_slide_out = SLIDE_OUT_TOP_RIGHT
                     else:
                         t.key_code = KEY_TOP_LEFT
-                        t.allow_slide_out = ALLOW_SLIDE_OUT_TOP_LEFT
+                        t.allow_slide_out = SLIDE_OUT_TOP_LEFT
                     log(f"[Landing] X:{t.x} Y:{t.y} -> ZONE '{zone}' (Key: {t.key_code}, SlideOut: {t.allow_slide_out})")
                 else:
                     t.is_thumb_zone = False
                     t.pointer = True
                     log(f"[Landing] X:{t.x} Y:{t.y} -> POINTER MODE")
 
+        # 2. Check for Multi-Touch / Exclusive Conflicts
+        active_thumb_touches = [t for t in self.touches.values() if t.is_thumb_zone and not t.ended]
+        zones_in_use = [t.key_code for t in active_thumb_touches if t.key_code is not None]
+        has_same_zone_duplicate = len(zones_in_use) != len(set(zones_in_use))
+        has_exclusive_conflict = EXCLUSIVE_THUMB_KEYS and len(active_thumb_touches) >= 2
+
+        if has_same_zone_duplicate or has_exclusive_conflict:
+            for t in active_thumb_touches:
+                if t.key_pressed:
+                    assert t.key_code is not None
+                    self.kbd.emit(EV_KEY, t.key_code, 0)
+                    self.kbd.syn()
+                    t.key_pressed = False
+                    reason = "Same-Zone Duplicate" if has_same_zone_duplicate else "Exclusive Conflict"
+                    print(f"=== KEY UP ({reason}): {t.key_code} -> POINTER MODE ===", flush=True)
+
+                t.is_thumb_zone = False
+                t.pointer = True
+
+        # 3. Process remaining single thumb-key presses/releases
+        for t in list(self.touches.values()):
             # Instant Press
             if t.is_thumb_zone and not t.key_pressed and not t.ended:
                 assert t.key_code is not None
@@ -363,17 +389,17 @@ class TouchZoneDaemon:
                 t.key_pressed = True
                 print(f"=== KEY DOWN: {t.key_code} ===", flush=True)
 
-            # Optional Zone Exit: Only triggers if allow_slide_out is enabled for this zone
+            # Zone Exit: Finger moved out of thumb zone while still on pad
             if t.is_thumb_zone and t.allow_slide_out and t.key_pressed and t.y is not None and t.y >= ZONE_HEIGHT:
                 assert t.key_code is not None
                 self.kbd.emit(EV_KEY, t.key_code, 0)
                 self.kbd.syn()
                 t.key_pressed = False
                 t.is_thumb_zone = False
-                t.pointer = True  # Transition seamlessly to pointer movement
+                t.pointer = True
                 print(f"=== KEY UP (Zone Exit): {t.key_code} -> POINTER MODE ===", flush=True)
 
-            # Instant Release (Finger lifted)
+            # Instant Release
             if t.key_pressed and t.ended:
                 assert t.key_code is not None
                 self.kbd.emit(EV_KEY, t.key_code, 0)
@@ -393,7 +419,6 @@ class TouchZoneDaemon:
                 continue
 
             self.pad.emit(EV_ABS, ABS_MT_SLOT, s)
-            # Emit tracking ID if this is a new pointer touch OR a transitioned thumb touch
             if not t.started:
                 self.pad.emit(EV_ABS, ABS_MT_TRACKING_ID, t.tid)
                 t.started = True
@@ -528,7 +553,7 @@ class TouchZoneDaemon:
 
 
 # =============================================================================
-# Main
+# Main Execution Entry Point
 # =============================================================================
 
 if __name__ == "__main__":
