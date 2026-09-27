@@ -21,7 +21,7 @@ After achieving your preferred settings, you may install the script and systemd 
 
 ```bash
 cd ~/Downloads/touchpad-thumbkeys/
-sudo install -m755 touchpad-thumbkeys.py /usr/local/bin/thumbkeys.py
+sudo install -m755 touchpad-thumbkeys.py /usr/local/bin/touchpad-thumbkeys.py
 sudo install -m644 touchpad-thumbkeys.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now touchpad-thumbkeys
@@ -36,7 +36,7 @@ Restart Kanata or other input handlers so they regrab the device. Only necessary
 ## Uninstall
 ```bash
 sudo systemctl disable --now touchpad-thumbkeys
-sudo rm /usr/local/bin/thumbkeys.py /etc/systemd/system/touchpad-thumbkeys.service
+sudo rm /usr/local/bin/touchpad-thumbkeys.py /etc/systemd/system/touchpad-thumbkeys.service
 sudo systemctl daemon-reload
 ```
     

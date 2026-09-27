@@ -9,7 +9,7 @@ Before=kanata.service keyd.service kmonad.service input-plumber.service
 [Service]
 Type=simple
 WorkingDirectory=/usr/local/bin
-ExecStart=/usr/bin/python3 /usr/local/bin/thumbkeys.py
+ExecStart=/usr/bin/python3 /usr/local/bin/touchpad-thumbkeys.py
 
 # Pause systemd's queue for 1 second to give uinput time to create the device nodes and ready them for Kanata
 # Only required if you run Kanata as a service.
