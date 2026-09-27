@@ -17,7 +17,7 @@ Before a full installation, configure the daemon:
 
 ## Install (Optional)
 
-After achieving your preferred settings, you may install the script and systemd service to run it automatically in the background. If kanata.service is also installed, it explicitly runs before it.
+After achieving your preferred settings, you may install the script and systemd service to run it automatically in the background. The service requests being started before other common input handling services (kanata, keyd, kmonad, input-plumber), but beware that the order matters for input grabbing so you may need to add your missing service to the `Before=` line of `touchpad-thumbkeys.service`.
 
 ```bash
 cd ~/Downloads/touchpad-thumbkeys/
@@ -39,8 +39,8 @@ sudo systemctl disable --now touchpad-thumbkeys
 sudo rm /usr/local/bin/touchpad-thumbkeys.py /etc/systemd/system/touchpad-thumbkeys.service
 sudo systemctl daemon-reload
 ```
-    
-    
+
+
 ## Touchpad Conflict Mitigation
 
 This is designed to not interfere with most regular touchpad movement:
@@ -49,7 +49,3 @@ This is designed to not interfere with most regular touchpad movement:
 *   **Same-Zone Cancellation:** If two fingers land in the same thumb zone (e.g., initiating a two-finger scroll near the top edge), keys are released and touch input is passed through.
 *   **Exclusive Key Mode:** (optional) Any simultaneous left+right thumb zone enablement releases the keys and begins pass-through (a cross-zone version of same-zone cancellation).
 *   **Hold Time Delay:** (optional) Require that a finger remain in a thumb zone for at least a number of milliseconds before its action is outputted.
-
-## License 
-
-GPL-2.0-only
