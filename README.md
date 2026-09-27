@@ -1,6 +1,14 @@
 # Touchpad ThumbKeys
+<h2 align="center">
+  <img
+    alt="Image of a touchpad with its top-left and top-right corners split by pink dashed lines"
+    title="Touchpad ThumbKeys"
+    height="160"
+    src="assets/icon.svg"
+  />
+</h2>
 
-Converts the top strip of your touchpad into configurable left/right zones that output single keys, combinations of keys, or commands.
+Touchpad ThumbKeys converts the top strip of your touchpad into configurable left/right zones that output single keys, combinations of keys, or commands.
 Built with [Kanata](https://github.com/jtroo/kanata/) consumption in mind, but works just as well as a stand-alone tool.
 
 ## Configure
