@@ -38,15 +38,16 @@ CENTER_X: int | None = 1100
 
 # Action to perform when a thumb zone is triggered.
 # Can be:
-#  - int: A single Linux EV_KEY kernel integer (e.g., `94``)
+#  - int: A single Linux EV_KEY kernel integer (e.g., `94`)
+#       - Full list at # https://github.com/torvalds/linux/blob/master/include/uapi/linux/input-event-codes.h
 #  - list[int]: A combination of keycodes pressed simultaneously (e.g., `[29, 46]` for Ctrl+C)
 #  - str: A shell command executed asynchronously (e.g., "notify-send 'Thumbkey Pressed'") 
 #    (!! DANGER !!)   This command will run with full root privileges.   (!! DANGER !!)
 #
-# Common Keycodes: 1=Esc, 29=L-Ctrl, 42= L-Shift, 125=L-Meta, 56=L-Alt, 100=R-Alt (AltGr)
-# Keycodes for Kanata consumption: 94=Muhenkan, 92=Henkan (JIS left and right thumb keys)
-# https://github.com/torvalds/linux/blob/master/include/uapi/linux/input-event-codes.h
-ACTION_TOP_LEFT: int | list[int] | str = "echo 'naaaah'"
+# Modifier Keycodes: 29=L-Ctrl, 42= L-Shift, 125=L-Meta, 56=L-Alt, 100=R-Alt (AltGr)
+# Keycodes for clean Kanata consumption: 94=Muhenkan, 92=Henkan (JIS left and right thumb keys)
+
+ACTION_TOP_LEFT: int | list[int] | str = 94
 ACTION_TOP_RIGHT: int | list[int] | str = 92
 
 # Hold Time (in milliseconds): The finger must remain in the thumb zone for this long
