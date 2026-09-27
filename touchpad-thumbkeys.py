@@ -34,7 +34,7 @@ ZONE_HEIGHT: int = 300
 
 # Center X division line in raw device units.
 # Set to None for exact center split, or set to midpoint between your two thumb's X values.
-CENTER_X: int | None = 1100
+CENTER_X: int | None = None
 
 # Action to perform when a thumb zone is triggered.
 # Can be:
