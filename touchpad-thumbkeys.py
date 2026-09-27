@@ -69,7 +69,7 @@ EXCLUSIVE_THUMB_KEYS: bool = False
 
 # KDE Settings Sync: If True, queries KDE Plasma's D-Bus interface to clone
 # the captured touchpad's settings onto the virtual pointer device upon startup.
-# Gnome and WLRoots-based desktops use global touchpad settings.
+# Gnome and WLRoots-based desktops use global instead of per-device settings.
 KDE_INHERIT_TOUCHPAD_SETTINGS: bool = True
 
 # =============================================================================

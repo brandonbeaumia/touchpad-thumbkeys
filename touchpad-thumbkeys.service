@@ -2,9 +2,9 @@
 Description=Touchpad Thumb Keys Daemon
 After=sys-subsystem-input-devices.device graphical.target
 Wants=sys-subsystem-input-devices.device
-# Tell systemd to initialize this before Kanata so Kanata can find the created virtual keyboard device
-# Only required if you run Kanata as a service
-Before=kanata.service
+# Tell systemd to initialize this before other input handlers.
+# Send a PR if yours is missing from this list!
+Before=kanata.service keyd.service kmonad.service input-plumber.service
 
 [Service]
 Type=simple

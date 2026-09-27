@@ -1,6 +1,7 @@
 # Touchpad ThumbKeys
 
 Converts the top strip of your touchpad into configurable left/right zones that output single keys, combinations of keys, or commands.
+Built with [https://github.com/jtroo/kanata/](Kanata) consumption in mind, but works just as well as a stand-alone tool.
 
 ## Configure
 
@@ -11,12 +12,13 @@ Before a full installation, configure the daemon:
   `sudo python3 touchpad-thumbkeys.py --debug`
 3. Place your fingers on home row and repeatedly tap your touchpad with each thumb. Note the X and Y coordinates that are reported.
 4. Press `Ctrl+C` to exit.
-5. Open `touchpad-thumbkeys.py` in your text editor and edit the (thorougly-commented) Configuration section to set up your two zones, two keycodes, and a few preferences.
+5. Open `touchpad-thumbkeys.py` in your text editor and edit the thorougly-commented Configuration section to set up your zones, actions, and a few preferences.
 6. Repeat until it is behaving to your liking.
+
 
 ## Install (Optional)
 
-After achieving your preferred settings, you may install the script and systemd service to run it automatically in the background.
+After achieving your preferred settings, you may install the script and systemd service to run it automatically in the background. If kanata.service is also installed, it explicitly runs before it.
 
     ```
     cd ~/Downloads/touchpad-thumbkeys/
@@ -24,6 +26,7 @@ After achieving your preferred settings, you may install the script and systemd 
     sudo install -m644 touchpad-thumbkeys.service /etc/systemd/system/
     sudo systemctl daemon-reload
     sudo systemctl enable --now touchpad-thumbkeys
+    (restart Kanata or other input handlers regrab the device; only necessary the first time)
     ```
 
 ## Uninstall
