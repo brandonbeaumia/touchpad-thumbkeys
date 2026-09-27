@@ -18,16 +18,19 @@ Before a full installation, configure the daemon:
 
 After achieving your preferred settings, you may install the script and systemd service to run it automatically in the background.
 
+    ```
     sudo install -m755 touchpad-thumbkeys.py /usr/local/bin/thumbkeys.py
     sudo install -m644 touchpad-thumbkeys.service /etc/systemd/system/
     sudo systemctl daemon-reload
     sudo systemctl enable --now touchpad-thumbkeys
+    ```
 
 ## Uninstall
-
+    ```
     sudo systemctl disable --now touchpad-thumbkeys
     sudo rm /usr/local/bin/thumbkeys.py /etc/systemd/system/touchpad-thumbkeys.service
     sudo systemctl daemon-reload
+    ```
 
 ## Troubleshooting
 
@@ -37,8 +40,8 @@ After achieving your preferred settings, you may install the script and systemd 
 
 ## Touchpad Conflict Mitigation
 
-This daemon is designed to not interfere with most regular touchpad movement:
-*   **Landing Zone Only:** Sliding into the thumb zones is passed through as regular cursor movement.
+This is designed to not interfere with most regular touchpad movement:
+*   **Landing Zone Only:** Sliding into the thumb zones from below is passed through as regular cursor movement.
 *   **Dynamic Slide-Out:** Sliding out of a thumb zone releases the synthetic key and begins touch pass-through.
 *   **Same-Zone Cancellation:** If two fingers land in the same thumb zone (e.g., initiating a two-finger scroll near the top edge), keys are released and touch input is passed through.
 *   **Exclusive Key Mode:** (optional) Any simultaneous left+right thumb zone enablement releases the keys and begins pass-through (a more eager version of same-zone cancellation).

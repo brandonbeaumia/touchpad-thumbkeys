@@ -36,21 +36,21 @@ ZONE_HEIGHT: int = 300
 # Set to None for exact center split, or set to midpoint between your two thumb's X values.
 CENTER_X: int | None = 1100
 
-# Keycodes to emit (using Linux EV_KEY kernel integers)
-#   1 = Esc
-#  29 = Left Control
-# 125 = Left Meta
-#  56 = Left Alt
-# 100 = Right Alt (AltGr)
-#  94 = Muhenkan (Left JIS thumb key, no conflicts, great for Kanata consumption)
-#  92 = Henkan (Right JIS thumb key, no conflicts, great for Kanata consumption)
-# Full list available at https://github.com/torvalds/linux/blob/master/include/uapi/linux/input-event-codes.h
-
-KEY_TOP_LEFT: int = 94
-KEY_TOP_RIGHT: int = 92
+# Action to perform when a thumb zone is triggered.
+# Can be:
+#  - int: A single Linux EV_KEY kernel integer (e.g., `94``)
+#  - list[int]: A combination of keycodes pressed simultaneously (e.g., `[29, 46]` for Ctrl+C)
+#  - str: A shell command executed asynchronously (e.g., "notify-send 'Thumbkey Pressed'") 
+#    (!! DANGER !!)   This command will run with full root privileges.   (!! DANGER !!)
+#
+# Common Keycodes: 1=Esc, 29=L-Ctrl, 42= L-Shift, 125=L-Meta, 56=L-Alt, 100=R-Alt (AltGr)
+# Keycodes for Kanata consumption: 94=Muhenkan, 92=Henkan (JIS left and right thumb keys)
+# https://github.com/torvalds/linux/blob/master/include/uapi/linux/input-event-codes.h
+ACTION_TOP_LEFT: int | list[int] | str = "echo 'naaaah'"
+ACTION_TOP_RIGHT: int | list[int] | str = 92
 
 # Hold Time (in milliseconds): The finger must remain in the thumb zone for this long
-# before the keycode is emitted. Set to 0 for instant activation.
+# before the action is triggered. Set to 0 for instant activation.
 HOLD_TIME_TOP_LEFT: int = 0
 HOLD_TIME_TOP_RIGHT: int = 0
 
@@ -67,7 +67,8 @@ SLIDE_OUT_TOP_RIGHT: bool = True
 EXCLUSIVE_THUMB_KEYS: bool = False
 
 # KDE Settings Sync: If True, queries KDE Plasma's D-Bus interface to clone
-# your main touchpad's settings onto the virtual pointer device upon startup.
+# the captured touchpad's settings onto the virtual pointer device upon startup.
+# Gnome and WLRoots-based desktops use global touchpad settings.
 KDE_INHERIT_TOUCHPAD_SETTINGS: bool = True
 
 # =============================================================================
@@ -266,9 +267,10 @@ class Touch:
         self.start_time: float = time.monotonic()
         self.origin_evaluated: bool = False
         self.is_thumb_zone: bool = False
-        self.key_code: int | None = None
+        self.zone_name: str | None = None
+        self.action: int | list[int] | str | None = None
         self.hold_time_ms: int = 0
-        self.key_pressed: bool = False
+        self.action_active: bool = False
         self.allow_slide_out: bool = False
         self.pointer: bool = False
         self.started: bool = False
@@ -294,7 +296,17 @@ class TouchZoneDaemon:
         self.center_x: int = CENTER_X if CENTER_X is not None else self.max_x // 2
 
         self.virtual_pointer_name: str = "Touchpad Thumbkeys Virtual Pointer"
-        self.kbd: UInput = UInput("Touchpad Thumbkeys Keyboard", keys=[KEY_TOP_LEFT, KEY_TOP_RIGHT])
+        
+        # Dynamically aggregate all keycodes defined in the config to register with uinput
+        kbd_keys = set[int]()
+        for action in (ACTION_TOP_LEFT, ACTION_TOP_RIGHT):
+            if isinstance(action, int):
+                kbd_keys.add(action)
+            elif isinstance(action, (list, tuple)):
+                kbd_keys.update(action)
+                
+        self.kbd: UInput = UInput("Touchpad Thumbkeys Keyboard", keys=list(kbd_keys))
+        
         self.pad: UInput = UInput(
             self.virtual_pointer_name,
             keys=[BTN_LEFT, BTN_TOUCH] + BTN_TOOL,
@@ -317,14 +329,28 @@ class TouchZoneDaemon:
         fcntl.ioctl(self.src, EVIOCGRAB, 1)
         print(f"[Device] Acquired exclusive EVIOCGRAB on '{self.target_name}' ({self.src_path})", flush=True)
 
+    def trigger_action(self, action: int | list[int] | str, state: int) -> None:
+        """Emit uinput keys or execute shell commands based on the action type."""
+        if isinstance(action, str):
+            if state == 1:
+                subprocess.Popen(action, shell=True)
+        elif isinstance(action, int):
+            self.kbd.emit(EV_KEY, action, state)
+            self.kbd.syn()
+        else:
+            # On release, lift keys in the reverse order they were pressed
+            keys = action if state == 1 else reversed(action)
+            for k in keys:
+                self.kbd.emit(EV_KEY, k, state)
+            self.kbd.syn()
+
     def sync_kde_settings(self, source_path: str, virtual_name: str) -> None:
         """Background worker to query and clone KDE KWin input device configuration via D-Bus."""
         import pwd
         
-        # 1. Dynamically find the logged-in KDE user (works whether started via sudo or systemd)
+        # 1. Dynamically find the logged-in KDE user
         uid = None
         try:
-            # Find the UID of the user running the Plasma window manager
             ps_res = subprocess.run(["ps", "-C", "kwin_wayland,kwin_x11", "-o", "uid="], capture_output=True, text=True)
             uids = [u.strip() for u in ps_res.stdout.splitlines() if u.strip()]
             if uids:
@@ -332,7 +358,6 @@ class TouchZoneDaemon:
         except Exception:
             pass
 
-        # Fallback to SUDO_USER if ps failed
         if uid is None:
             sudo_user = os.environ.get("SUDO_USER")
             if sudo_user and sudo_user != "root":
@@ -348,7 +373,6 @@ class TouchZoneDaemon:
         env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path=/run/user/{uid}/bus"
 
         # Helper to execute busctl safely inside the user's D-Bus session
-        # Helper to execute busctl safely inside the user's D-Bus session
         def run_busctl(*args: str) -> subprocess.CompletedProcess[str]:
             cmd = ["sudo", "-E", "-u", username, "busctl", "--user"] + list(args)
             try:
@@ -362,7 +386,7 @@ class TouchZoneDaemon:
         print(f"[KDE Sync] Bridging D-Bus session for user '{username}' (UID: {uid})...", flush=True)
         virt_sys_name = None
 
-        # 2. Poll KWin D-Bus tree for the virtual pointer indefinitely
+        # 2. Poll KWin D-Bus tree indefinitely (waits for KWin to finish booting if at login screen)
         while True:
             time.sleep(2.0)
             res = run_busctl("tree", "org.kde.KWin")
@@ -381,15 +405,9 @@ class TouchZoneDaemon:
             if virt_sys_name:
                 break
 
-        if not virt_sys_name:
-            print("[KDE Sync] Warning: Could not locate virtual device in KDE D-Bus tree. Skipping sync.", flush=True)
-            return
-
         virt_dbus_path = f"/org/kde/KWin/InputDevice/{virt_sys_name}"
         print(f"[KDE Sync] Matching source ({src_dbus_path}) -> virtual ({virt_dbus_path})", flush=True)
-        
 
-        # 3. Clone properties
         properties: list[str] = [
             "enabled", "disableEventsOnExternalMouse", "leftHanded", 
             "middleButtonEmulation", "pointerAcceleration", "pointerAccelerationProfile", 
@@ -455,7 +473,7 @@ class TouchZoneDaemon:
         timeout = 1.0
         now = time.monotonic()
         for t in self.touches.values():
-            if t.is_thumb_zone and not t.key_pressed and not t.ended and t.hold_time_ms > 0:
+            if t.is_thumb_zone and not t.action_active and not t.ended and t.hold_time_ms > 0:
                 time_left = (t.hold_time_ms / 1000.0) - (now - t.start_time)
                 if time_left <= 0:
                     return 0.0
@@ -464,18 +482,17 @@ class TouchZoneDaemon:
         return timeout
 
     def process_held_keys(self) -> None:
-        """Emit key presses for touches that have met their required hold time."""
+        """Trigger actions for touches that have met their required hold time."""
         now = time.monotonic()
         for t in self.touches.values():
-            if t.is_thumb_zone and not t.key_pressed and not t.ended:
+            if t.is_thumb_zone and not t.action_active and not t.ended:
                 if (now - t.start_time) * 1000 >= t.hold_time_ms:
-                    assert t.key_code is not None
-                    self.kbd.emit(EV_KEY, t.key_code, 1)
-                    self.kbd.syn()
-                    t.key_pressed = True
+                    assert t.action is not None
+                    self.trigger_action(t.action, 1)
+                    t.action_active = True
                     
                     label = "Instant" if t.hold_time_ms == 0 else f"Held {t.hold_time_ms}ms"
-                    print(f"=== KEY DOWN ({label}): {t.key_code} ===", flush=True)
+                    print(f"=== ACTION DOWN ({label}): {t.action} ===", flush=True)
 
     def process_frame(self) -> None:
         """Process complete event frames and route to keyboard or pointer uinput."""
@@ -486,56 +503,54 @@ class TouchZoneDaemon:
 
                 if zone is not None:
                     t.is_thumb_zone = True
+                    t.zone_name = zone
                     if zone == "top_right":
-                        t.key_code = KEY_TOP_RIGHT
+                        t.action = ACTION_TOP_RIGHT
                         t.allow_slide_out = SLIDE_OUT_TOP_RIGHT
                         t.hold_time_ms = HOLD_TIME_TOP_RIGHT
                     else:
-                        t.key_code = KEY_TOP_LEFT
+                        t.action = ACTION_TOP_LEFT
                         t.allow_slide_out = SLIDE_OUT_TOP_LEFT
                         t.hold_time_ms = HOLD_TIME_TOP_LEFT
-                    log(f"[Landing] X:{t.x} Y:{t.y} -> ZONE '{zone}' (Key: {t.key_code}, Hold: {t.hold_time_ms}ms, SlideOut: {t.allow_slide_out})")
+                    log(f"[Landing] X:{t.x} Y:{t.y} -> ZONE '{zone}' (Action: {t.action}, Hold: {t.hold_time_ms}ms, SlideOut: {t.allow_slide_out})")
                 else:
                     t.is_thumb_zone = False
                     t.pointer = True
                     log(f"[Landing] X:{t.x} Y:{t.y} -> POINTER MODE")
 
         active_thumb_touches = [t for t in self.touches.values() if t.is_thumb_zone and not t.ended]
-        zones_in_use = [t.key_code for t in active_thumb_touches if t.key_code is not None]
-        has_same_zone_duplicate = len(zones_in_use) != len(set(zones_in_use))
+        active_zones = [t.zone_name for t in active_thumb_touches if t.zone_name is not None]
+        has_same_zone_duplicate = len(active_zones) != len(set(active_zones))
         has_exclusive_conflict = EXCLUSIVE_THUMB_KEYS and len(active_thumb_touches) >= 2
 
         if has_same_zone_duplicate or has_exclusive_conflict:
             for t in active_thumb_touches:
-                if t.key_pressed:
-                    assert t.key_code is not None
-                    self.kbd.emit(EV_KEY, t.key_code, 0)
-                    self.kbd.syn()
-                    t.key_pressed = False
+                if t.action_active:
+                    assert t.action is not None
+                    self.trigger_action(t.action, 0)
+                    t.action_active = False
                     reason = "Same-Zone Duplicate" if has_same_zone_duplicate else "Exclusive Conflict"
-                    print(f"=== KEY UP ({reason}): {t.key_code} -> POINTER MODE ===", flush=True)
+                    print(f"=== ACTION UP ({reason}): {t.action} -> POINTER MODE ===", flush=True)
 
                 t.is_thumb_zone = False
                 t.pointer = True
 
         for t in list(self.touches.values()):
             if t.is_thumb_zone and t.allow_slide_out and t.y is not None and t.y >= ZONE_HEIGHT:
-                if t.key_pressed:
-                    assert t.key_code is not None
-                    self.kbd.emit(EV_KEY, t.key_code, 0)
-                    self.kbd.syn()
-                    t.key_pressed = False
-                    print(f"=== KEY UP (Zone Exit): {t.key_code} -> POINTER MODE ===", flush=True)
+                if t.action_active:
+                    assert t.action is not None
+                    self.trigger_action(t.action, 0)
+                    t.action_active = False
+                    print(f"=== ACTION UP (Zone Exit): {t.action} -> POINTER MODE ===", flush=True)
                 
                 t.is_thumb_zone = False
                 t.pointer = True
 
-            if t.key_pressed and t.ended:
-                assert t.key_code is not None
-                self.kbd.emit(EV_KEY, t.key_code, 0)
-                self.kbd.syn()
-                t.key_pressed = False
-                print(f"=== KEY UP: {t.key_code} ===", flush=True)
+            if t.action_active and t.ended:
+                assert t.action is not None
+                self.trigger_action(t.action, 0)
+                t.action_active = False
+                print(f"=== ACTION UP: {t.action} ===", flush=True)
 
         self.process_held_keys()
         self.forward_pointer_events()
@@ -679,9 +694,9 @@ class TouchZoneDaemon:
         try:
             if hasattr(self, "touches") and hasattr(self, "kbd"):
                 for t in self.touches.values():
-                    if t.key_pressed and t.key_code:
-                        self.kbd.emit(EV_KEY, t.key_code, 0)
-                        print(f"=== Emergency KEY UP on exit: {t.key_code} ===", flush=True)
+                    if t.action_active and t.action:
+                        self.trigger_action(t.action, 0)
+                        print(f"=== Emergency ACTION UP on exit: {t.action} ===", flush=True)
                 self.kbd.syn()
 
             if hasattr(self, "src"):
