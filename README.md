@@ -9,7 +9,7 @@
 </h2>
 
 Touchpad ThumbKeys converts the top strip of your touchpad into configurable left/right zones that output single keys, combinations of keys, or commands.
-Built with [Kanata](https://github.com/jtroo/kanata/) consumption in mind, but works just as well as a stand-alone tool.
+Built with [Kanata](https://github.com/jtroo/kanata/) consumption in mind, but works just as well as a stand-alone tool. Initial codebase from [lordyoyi's zenbook-numberpad](https://github.com/lordyoyi/zenbook-numberpad).
 
 ## Configure
 
