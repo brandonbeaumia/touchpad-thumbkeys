@@ -20,7 +20,7 @@ This is designed to not interfere with most regular touchpad movement:
 *   (optional) Exclusive Key Mode: Any simultaneous left+right thumb zone enablement releases all keys and begins pass-through (cross-zone version of the same-zone cancellation above).
 *   (optional) Hold Time Delay: Require that a finger remain in a thumb zone for at least a number of milliseconds before its action is outputted.
 *   (optional) Letting Kanata consume your key presses and apply more complicated timing and conditional logic gives you the power to prevent practically any misfires.
-*   
+  
 ## Configure
 
 Before a full installation, configure the daemon:
