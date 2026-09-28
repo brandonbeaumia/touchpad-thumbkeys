@@ -8,9 +8,19 @@
   />
 </h2>
 
-Touchpad ThumbKeys converts the top strip of your touchpad into configurable left/right zones that output single keys, combinations of keys, or commands.
-Built with [Kanata](https://github.com/jtroo/kanata/) consumption in mind, but works just as well as a stand-alone tool. Initial codebase from [lordyoyi's zenbook-numberpad](https://github.com/lordyoyi/zenbook-numberpad).
+Touchpad ThumbKeys is a Linux daemon that converts the top strip of your touchpad into configurable left/right zones that output single keys, combinations of keys, or commands.
+Built with [Kanata](https://github.com/jtroo/kanata/) consumption in mind, but also works well as a stand-alone tool. Initial codebase from [lordyoyi's zenbook-numberpad](https://github.com/lordyoyi/zenbook-numberpad).
 
+## Touchpad Conflict Mitigation
+
+This is designed to not interfere with most regular touchpad movement:
+*   Sliding into the thumb zones from below is passed through as regular cursor movement.
+*   Sliding out of a thumb zone releases the virtual key and begins touch pass-through.
+*   If two fingers land in the same thumb zone (e.g., initiating a two-finger scroll near the top edge), all keys are released and touch input is passed through.
+*   (optional) Exclusive Key Mode: Any simultaneous left+right thumb zone enablement releases all keys and begins pass-through (cross-zone version of the same-zone cancellation above).
+*   (optional) Hold Time Delay: Require that a finger remain in a thumb zone for at least a number of milliseconds before its action is outputted.
+*   (optional) Letting Kanata consume your key presses and apply more complicated timing and conditional logic gives you the power to prevent practically any misfires.
+*   
 ## Configure
 
 Before a full installation, configure the daemon:
@@ -47,13 +57,3 @@ sudo systemctl disable --now touchpad-thumbkeys
 sudo rm /usr/local/bin/touchpad-thumbkeys.py /etc/systemd/system/touchpad-thumbkeys.service
 sudo systemctl daemon-reload
 ```
-
-
-## Touchpad Conflict Mitigation
-
-This is designed to not interfere with most regular touchpad movement:
-*   Sliding into the thumb zones from below is passed through as regular cursor movement.
-*   Sliding out of a thumb zone releases the synthetic key and begins touch pass-through.
-*   If two fingers land in the same thumb zone (e.g., initiating a two-finger scroll near the top edge), keys are released and touch input is passed through.
-*   (optional) Exclusive Key Mode: Any simultaneous left+right thumb zone enablement releases the keys and begins pass-through (cross-zone version of the same-zone cancellation above).
-*   (optional) Hold Time Delay: Require that a finger remain in a thumb zone for at least a number of milliseconds before its action is outputted.
