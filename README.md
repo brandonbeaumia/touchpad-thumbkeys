@@ -52,8 +52,8 @@ sudo systemctl daemon-reload
 ## Touchpad Conflict Mitigation
 
 This is designed to not interfere with most regular touchpad movement:
-*   **Landing Zone Only:** Sliding into the thumb zones from below is passed through as regular cursor movement.
-*   **Dynamic Slide-Out:** Sliding out of a thumb zone releases the synthetic key and begins touch pass-through.
-*   **Same-Zone Cancellation:** If two fingers land in the same thumb zone (e.g., initiating a two-finger scroll near the top edge), keys are released and touch input is passed through.
-*   **Exclusive Key Mode:** (optional) Any simultaneous left+right thumb zone enablement releases the keys and begins pass-through (a cross-zone version of same-zone cancellation).
-*   **Hold Time Delay:** (optional) Require that a finger remain in a thumb zone for at least a number of milliseconds before its action is outputted.
+*   Sliding into the thumb zones from below is passed through as regular cursor movement.
+*   Sliding out of a thumb zone releases the synthetic key and begins touch pass-through.
+*   If two fingers land in the same thumb zone (e.g., initiating a two-finger scroll near the top edge), keys are released and touch input is passed through.
+*   (optional) Exclusive Key Mode: Any simultaneous left+right thumb zone enablement releases the keys and begins pass-through (a cross-zone version of same-zone cancellation).
+*   (optional) Hold Time Delay: Require that a finger remain in a thumb zone for at least a number of milliseconds before its action is outputted.
