@@ -55,5 +55,5 @@ This is designed to not interfere with most regular touchpad movement:
 *   Sliding into the thumb zones from below is passed through as regular cursor movement.
 *   Sliding out of a thumb zone releases the synthetic key and begins touch pass-through.
 *   If two fingers land in the same thumb zone (e.g., initiating a two-finger scroll near the top edge), keys are released and touch input is passed through.
-*   (optional) Exclusive Key Mode: Any simultaneous left+right thumb zone enablement releases the keys and begins pass-through (a cross-zone version of same-zone cancellation).
+*   (optional) Exclusive Key Mode: Any simultaneous left+right thumb zone enablement releases the keys and begins pass-through (cross-zone version of the same-zone cancellation above).
 *   (optional) Hold Time Delay: Require that a finger remain in a thumb zone for at least a number of milliseconds before its action is outputted.
